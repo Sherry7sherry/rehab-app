@@ -18,6 +18,7 @@ const state = {
     birthType: "vaginal",
     clinicianClearance: "cleared",
     symptoms: [],
+    concernNotes: "",
     cSectionScarPain: "none",
     abdominalSeparationConcern: "no",
     pelvicFloorConcern: "no",
@@ -449,6 +450,21 @@ function togglePostpartumSymptom(symptom) {
   render();
 }
 
+function togglePostpartumSymptomGroup(group) {
+  const items = group.split(",");
+  const symptoms = state.postpartumScreening.symptoms;
+  const shouldRemove = items.some((item) => symptoms.includes(item));
+  state.postpartumScreening.symptoms = shouldRemove
+    ? symptoms.filter((item) => !items.includes(item))
+    : Array.from(new Set([...symptoms, ...items]));
+  render();
+}
+
+function updatePostpartumNotes(value) {
+  state.postpartumScreening.concernNotes = value;
+  persistState();
+}
+
 function continuePostpartumScreening() {
   const result = screening.evaluatePostpartum(state.postpartumScreening);
   state.screeningResult = result;
@@ -577,63 +593,118 @@ function goalSelection() {
 
 function postpartumScreening() {
   const answers = state.postpartumScreening;
+  const symptomCards = [
+    {
+      value: "bleeding,dizziness",
+      title: "Bleeding or dizziness",
+      detail: "Significant spotting or lightheadedness when moving."
+    },
+    {
+      value: "pelvic_heaviness,leakage",
+      title: "Pelvic heaviness or leakage",
+      detail: "A feeling of pressure or involuntary bladder leakage."
+    },
+    {
+      value: "sharp_pain",
+      title: "Sharp or unusual pain",
+      detail: "Specifically in the pelvic, back, or abdominal regions."
+    }
+  ];
   shell(`
-    <section class="view">
-      ${topbar("goals")}
-      <div class="screen-intro">
-        <p class="eyebrow">Safety screening</p>
+    <section class="view postpartum-screening-page">
+      <div class="screening-topbar">
+        <button class="goal-back" onclick="setScreen('goals')" aria-label="Back">←</button>
+        <div class="screening-brand">FlowMove</div>
+        <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
+      </div>
+
+      <div class="screening-progress-head">
+        <span>Step 1 of 3: Safety Screening</span>
+        <span>33%</span>
+      </div>
+      <div class="screening-progress"><i></i></div>
+
+      <div class="postpartum-screening-intro">
         <h2>First, a few postpartum safety checks.</h2>
-        <p class="copy">FlowMove is movement guidance, not medical diagnosis. These answers help us choose a safer starting point.</p>
+        <p>Your body has done something incredible. These questions help us tailor your movement to ensure your recovery is safe, supportive, and restorative.</p>
       </div>
-      <div class="stack">
-        ${selectField("How long postpartum are you?", "postpartumDuration", answers.postpartumDuration, [
-          ["6_12_weeks", "6-12 weeks"],
-          ["3_6_months", "3-6 months"],
-          ["6_12_months", "6-12 months"],
-          ["12_24_months", "12-24 months"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Birth type", "birthType", answers.birthType, [
-          ["vaginal", "Vaginal birth"],
-          ["c_section", "C-section"],
-          ["prefer_not", "Prefer not to say"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Clinician clearance", "clinicianClearance", answers.clinicianClearance, [
-          ["cleared", "Yes, cleared for exercise"],
-          ["not_yet", "Not yet"],
-          ["not_sure", "Not sure"]
-        ], "updatePostpartumScreening")}
-        ${symptomChips("Any symptoms today?", [
-          ["leakage", "Leakage"],
-          ["pelvic_heaviness", "Pelvic heaviness"],
-          ["sharp_pain", "Sharp pain"],
-          ["dizziness", "Dizziness"],
-          ["bleeding", "Bleeding"]
-        ], answers.symptoms)}
-        ${selectField("C-section scar pain", "cSectionScarPain", answers.cSectionScarPain, [
-          ["none", "None"],
-          ["mild", "Mild"],
-          ["significant", "Significant"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Abdominal separation concern", "abdominalSeparationConcern", answers.abdominalSeparationConcern, [
-          ["no", "No"],
-          ["yes", "Yes"],
-          ["not_sure", "Not sure"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Pelvic floor concern", "pelvicFloorConcern", answers.pelvicFloorConcern, [
-          ["no", "No"],
-          ["yes", "Yes"],
-          ["not_sure", "Not sure"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Current activity level", "activityLevel", answers.activityLevel, [
-          ["very_gentle", "Very gentle"],
-          ["light_walking", "Light walking"],
-          ["some_pilates", "Some Pilates"],
-          ["regular", "Regular exercise"]
-        ], "updatePostpartumScreening")}
+
+      <div class="postpartum-form">
+        <div class="screening-question">
+          <p>How long postpartum are you?</p>
+          <div class="screening-grid-options">
+            ${[
+              ["0_6_weeks", "0-6 weeks"],
+              ["6_12_weeks", "6-12 weeks"],
+              ["3_6_months", "3-6 months"],
+              ["6_12_months", "6+ months"]
+            ].map(([value, label]) => `
+              <button class="${answers.postpartumDuration === value ? "selected" : ""}" onclick="updatePostpartumScreening('postpartumDuration', '${value}')">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Delivery method</p>
+          <div class="screening-segmented two">
+            ${[
+              ["vaginal", "Vaginal birth"],
+              ["c_section", "C-section"]
+            ].map(([value, label]) => `
+              <button class="${answers.birthType === value ? "selected" : ""}" onclick="updatePostpartumScreening('birthType', '${value}')">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Have you been cleared for exercise?</p>
+          <small>Typically during your 6-week obstetrician or midwife check-up.</small>
+          <div class="screening-segmented two">
+            ${[
+              ["cleared", "Yes, I am cleared"],
+              ["not_yet", "Not yet"]
+            ].map(([value, label]) => `
+              <button class="${answers.clinicianClearance === value ? "selected" : ""}" onclick="updatePostpartumScreening('clinicianClearance', '${value}')">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Are you experiencing any of the following?</p>
+          <div class="symptom-card-list">
+            ${symptomCards.map((card) => {
+              const values = card.value.split(",");
+              const selected = values.some((value) => answers.symptoms.includes(value));
+              return `
+                <button class="symptom-check-card ${selected ? "selected" : ""}" onclick="togglePostpartumSymptomGroup('${card.value}')">
+                  <i aria-hidden="true"></i>
+                  <span>
+                    <strong>${card.title}</strong>
+                    <small>${card.detail}</small>
+                  </span>
+                </button>
+              `;
+            }).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Any abdominal separation or pelvic floor concerns?</p>
+          <textarea
+            class="screening-textarea"
+            placeholder="Tell us in your own words how your core and pelvic floor feel..."
+            oninput="updatePostpartumNotes(this.value)"
+          >${answers.concernNotes || ""}</textarea>
+        </div>
+
+        <div class="screening-safety-note">
+          <span>i</span>
+          <p>Your safety is our priority. If you've selected any symptoms above, we'll suggest modifications or specialized pelvic health content first.</p>
+        </div>
       </div>
-      <div style="height: 18px"></div>
-      <button class="btn" onclick="continuePostpartumScreening()">Continue</button>
-      <button class="btn secondary" onclick="setRisk(true)">Preview safety warning</button>
+
+      <button class="screening-save-button" onclick="continuePostpartumScreening()">Save and Continue</button>
+      <p class="screening-disclaimer">This is a screening, not a medical diagnosis.</p>
     </section>
   `);
 }
