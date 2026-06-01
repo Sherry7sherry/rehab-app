@@ -711,53 +711,36 @@ function postpartumScreening() {
 
 function correctiveScreening() {
   const answers = state.correctiveScreening;
+  const focusOptions = [
+    ["posture", "Posture", "✣"],
+    ["mobility", "Mobility", "♙"],
+    ["stability", "Stability", "⚖"],
+    ["strength", "Strength", "⌘"]
+  ];
   shell(`
-    <section class="view">
-      ${topbar("goals")}
-      <div class="screen-intro">
-        <p class="eyebrow">Movement profile</p>
+    <section class="view corrective-screening-page">
+      <div class="corrective-screening-topbar">
+        <button class="corrective-close" onclick="setScreen('goals')" aria-label="Close">×</button>
+        <div class="corrective-mini-progress" aria-hidden="true"><i></i></div>
+        <span>Step 1/6</span>
+      </div>
+
+      <div class="corrective-screening-intro">
         <h2>Tell us what your body needs most.</h2>
-        <p class="copy">We will use this to shape your first assessment and plan.</p>
+        <p>Your responses allow our AI to tailor a corrective routine specifically for your unique alignment and posture profile.</p>
       </div>
-      <div class="stack">
-        ${selectField("Main focus area", "focusArea", answers.focusArea, [
-          ["posture", "Posture"],
-          ["back", "Back"],
-          ["hips", "Hips"],
-          ["shoulders", "Shoulders"],
-          ["knees", "Knees"],
-          ["full_body", "Full body"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Pain or discomfort", "discomfortLevel", answers.discomfortLevel, [
-          ["low", "0-2 low"],
-          ["mild", "3-4 mild"],
-          ["moderate", "5-6 moderate"],
-          ["high", "7+ high"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Sitting time per day", "sittingHours", answers.sittingHours, [
-          ["under_4", "Less than 4 hours"],
-          ["4_7", "4-7 hours"],
-          ["8_plus", "8+ hours"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Pilates experience", "pilatesExperience", answers.pilatesExperience, [
-          ["new", "New"],
-          ["some", "Some experience"],
-          ["regular", "Regular practice"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Current activity level", "activityLevel", answers.activityLevel, [
-          ["gentle", "Gentle"],
-          ["light", "Light"],
-          ["active", "Active"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Recent injury or surgery?", "recentInjuryOrSurgery", answers.recentInjuryOrSurgery, [
-          ["no", "No"],
-          ["yes", "Yes"],
-          ["not_sure", "Not sure"]
-        ], "updateCorrectiveScreening")}
+
+      <div class="corrective-focus-grid">
+        ${focusOptions.map(([value, label, icon]) => `
+          <button class="corrective-focus-card ${answers.focusArea === value ? "selected" : ""}" onclick="updateCorrectiveScreening('focusArea', '${value}')">
+            <span>${icon}</span>
+            <strong>${label}</strong>
+          </button>
+        `).join("")}
       </div>
-      <div style="height: 18px"></div>
-      <button class="btn" onclick="continueCorrectiveScreening()">Continue</button>
-      <button class="btn secondary" onclick="setRisk(true)">Preview safety warning</button>
+
+      <button class="corrective-continue" onclick="continueCorrectiveScreening()">Continue <span>→</span></button>
+      <button class="corrective-back" onclick="setScreen('goals')">Go Back</button>
     </section>
   `);
 }

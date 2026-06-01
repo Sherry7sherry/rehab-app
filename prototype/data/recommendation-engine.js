@@ -9,6 +9,11 @@ window.FlowMoveRecommendation = {
     if (selectedGoals.includes("discomfort")) signals.add("back_discomfort");
     if (selectedGoals.includes("corrective")) signals.add("alignment_goal");
 
+    if (state.correctiveScreening?.focusArea === "posture") signals.add("posture_goal");
+    if (state.correctiveScreening?.focusArea === "mobility") signals.add("limited_shoulder_mobility");
+    if (state.correctiveScreening?.focusArea === "stability") signals.add("hip_instability");
+    if (state.correctiveScreening?.focusArea === "strength") signals.add("strength_goal");
+
     if (state.readiness === "Tired") signals.add("low_energy");
     if (state.readiness === "Sore") signals.add("recovery_needed");
     if (state.readiness === "Pain or discomfort") signals.add("discomfort_today");
