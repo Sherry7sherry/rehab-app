@@ -4,19 +4,19 @@
 
 1. Harden workout session runtime v0.
    - Keep the GitHub version as the current baseline.
-   - Add local persistence for the active session and completed session history.
-   - Handle browser refresh, back navigation, skipped assessment, and early session exit.
+   - Add paused and ended-early states.
+   - Add stronger browser back/navigation handling.
    - Replace remaining hard-coded copy in the player with session/recommendation data.
 
 2. Make post-session reports truly data-driven.
-   - Use completed exercises, skipped exercises, cue events, assessment signals, and recommendation context.
-   - Produce path-specific `whatImproved`, `needsAttention`, `nextAdjustment`, and movement quality score.
-   - Remove remaining hard-coded report examples once the report generator covers the main paths.
+   - Add richer path-specific tone variants.
+   - Add per-exercise movement notes once pose detection or deterministic mock scoring is available.
+   - Add before/after comparison against previous completed sessions.
 
-3. Add persistence before backend.
-   - Save onboarding path, screening answers, assessment result, recommendation, session history, and readiness to `localStorage`.
+3. Improve prototype persistence controls.
    - Add a simple reset/debug control for prototype testing.
-   - Keep the data shape close to the future TypeScript model.
+   - Add migration/version handling if persisted state shape changes.
+   - Keep `localStorage` data shape close to the future TypeScript model.
 
 4. Convert prototype data model to TypeScript types.
    - `Exercise`
@@ -47,7 +47,7 @@
 - Add path-specific report tone.
 - Add readiness check into session runtime, not only recommendation.
 - Add path switching with re-screening.
-- Make Progress tab read from real session history instead of fixed example entries.
+- Add previous-session comparison into Progress tab.
 
 ## Safety
 
@@ -78,8 +78,6 @@
 
 - Add real browser camera access with `navigator.mediaDevices.getUserMedia`.
 - Prototype pose estimation with MediaPipe or MoveNet.
-- Add persistence layer:
-  - local storage first
-  - backend later
+- Add backend persistence after local prototype data shape is stable.
 - Add authentication after the core loop is stable.
 - Add Stripe only after subscription value is testable.

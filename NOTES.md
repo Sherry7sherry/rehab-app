@@ -13,7 +13,9 @@ The prototype now includes:
 - Mock assessment scoring in `prototype/data/assessment-engine.js`.
 - Rule-based recommendation in `prototype/data/recommendation-engine.js`.
 - Session runtime v0 in `prototype/app.js`, including active session state, exercise progression, skipped/completed exercises, cue events, and elapsed time.
-- Runtime-informed report generation v0, with some remaining hard-coded report presentation content.
+- `localStorage` persistence for onboarding path, screening answers, assessment result, recommendation snapshot, active session, readiness, and completed session history.
+- Runtime-informed report generation v0 using completed/skipped exercises, cue events, assessment signals, recommendation context, and movement quality scoring.
+- Progress journal v0 reading from completed session history instead of fixed example entries.
 
 Current Git baseline:
 
@@ -151,22 +153,39 @@ The workout player advances through variants one by one and can complete, skip, 
 
 Next runtime improvements:
 
-- persist active and completed sessions in `localStorage`
-- make browser refresh recover the current state
 - add paused/demo-only/camera-denied states
-- make progress and report screens read fully from session history
+- add explicit ended-early state
+- compare the latest session against previous session history
+- add a reset/debug control for clearing local prototype state
+
+## Persistence v0
+
+The prototype saves the following state to `localStorage` under `flowmove.prototype.state.v1`:
+
+- current screen and tab
+- selected path and goals
+- readiness
+- screening answers and screening result
+- assessment progress and result
+- latest recommendation snapshot
+- active session
+- completed session history
+
+Refresh behavior verified:
+
+- refreshing on the Report screen keeps the completed session report visible
+- refreshing on the Progress screen keeps completed session history visible
 
 ## Known Prototype Limitations
 
 - No backend.
 - No auth.
-- No persistence.
 - No real camera access.
 - No real pose detection.
 - No real video demos.
 - No actual payment/subscription.
 - Some UI images are generated placeholders.
-- Some report and progress content is still static presentation copy.
+- No explicit reset/debug UI for clearing local prototype state yet.
 
 ## GitHub Handoff
 

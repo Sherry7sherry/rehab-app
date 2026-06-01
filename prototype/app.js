@@ -8,6 +8,7 @@ const state = {
   completedAssessmentMovementIds: [],
   skippedAssessmentMovementIds: [],
   assessmentResult: null,
+  recommendationResult: null,
   activeSession: null,
   sessionHistory: [],
   risk: false,
@@ -31,6 +32,12 @@ const state = {
     recentInjuryOrSurgery: "no"
   }
 };
+
+const defaultPostpartumScreening = {
+  ...state.postpartumScreening,
+  symptoms: [...state.postpartumScreening.symptoms]
+};
+const defaultCorrectiveScreening = { ...state.correctiveScreening };
 
 const goals = [
   {
@@ -60,6 +67,66 @@ const screening = window.FlowMoveScreening;
 const assessmentEngine = window.FlowMoveAssessment;
 const recommendationEngine = window.FlowMoveRecommendation;
 const assessmentMoves = content.assessmentMovements;
+const STORAGE_KEY = "flowmove.prototype.state.v1";
+const PERSISTED_KEYS = [
+  "screen",
+  "path",
+  "goals",
+  "readiness",
+  "tab",
+  "assessmentStep",
+  "completedAssessmentMovementIds",
+  "skippedAssessmentMovementIds",
+  "assessmentResult",
+  "recommendationResult",
+  "activeSession",
+  "sessionHistory",
+  "risk",
+  "screeningResult",
+  "postpartumScreening",
+  "correctiveScreening"
+];
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function persistState() {
+  try {
+    const snapshot = PERSISTED_KEYS.reduce((memo, key) => {
+      memo[key] = state[key];
+      return memo;
+    }, {});
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    // Storage can fail in private browsing; the prototype should still run.
+  }
+}
+
+function hydrateState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    PERSISTED_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(saved, key)) {
+        state[key] = saved[key];
+      }
+    });
+    state.goals = Array.isArray(state.goals) ? state.goals : [];
+    state.completedAssessmentMovementIds = Array.isArray(state.completedAssessmentMovementIds)
+      ? state.completedAssessmentMovementIds
+      : [];
+    state.skippedAssessmentMovementIds = Array.isArray(state.skippedAssessmentMovementIds)
+      ? state.skippedAssessmentMovementIds
+      : [];
+    state.sessionHistory = Array.isArray(state.sessionHistory) ? state.sessionHistory : [];
+    state.postpartumScreening = { ...clone(defaultPostpartumScreening), ...(state.postpartumScreening || {}) };
+    state.correctiveScreening = { ...clone(defaultCorrectiveScreening), ...(state.correctiveScreening || {}) };
+  } catch (error) {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
 
 function getVariant(id) {
   return content.exerciseVariants.find((variant) => variant.id === id);
@@ -74,15 +141,17 @@ function getModule(id) {
 }
 
 function moduleForToday() {
-  return recommendationEngine.recommend({ state, content }).module;
+  return recommendationForToday().module;
 }
 
 function sessionVariantsForToday() {
-  return recommendationEngine.recommend({ state, content }).variants;
+  return recommendationForToday().variants;
 }
 
 function recommendationForToday() {
-  return recommendationEngine.recommend({ state, content });
+  const recommendation = recommendationEngine.recommend({ state, content });
+  state.recommendationResult = recommendation;
+  return recommendation;
 }
 
 function variantLabel(variant) {
@@ -215,7 +284,75 @@ function sessionCompletionPercent(session = state.activeSession) {
 
 function completedSessionOrFallback() {
   if (state.activeSession) return state.activeSession;
+  if (state.sessionHistory.length) return state.sessionHistory[0];
   return buildSessionFromRecommendation(recommendationForToday());
+}
+
+function scoreSession(session) {
+  if (!session?.exercises?.length) return 0;
+  const completed = session.completedExerciseIds.length;
+  const skipped = session.skippedExerciseIds.length;
+  return Math.max(52, Math.min(96, 68 + completed * 5 - skipped * 7));
+}
+
+function sessionElapsedMinutes(session) {
+  return Math.max(1, Math.round((session?.elapsedSec || 0) / 60));
+}
+
+function formatSessionDate(timestamp) {
+  if (!timestamp) return "Today";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(timestamp));
+}
+
+function latestCompletedSession() {
+  return state.sessionHistory.find((session) => session.status === "complete") || null;
+}
+
+function sessionPrimaryFocus(session) {
+  const capabilities = session?.exercises?.flatMap((exercise) => exercise.capabilities || []) || [];
+  const counts = capabilities.reduce((memo, capability) => {
+    memo[capability] = (memo[capability] || 0) + 1;
+    return memo;
+  }, {});
+  const [primary] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ["control"];
+  return humanizeCapability(primary);
+}
+
+function progressMetrics() {
+  const assessment = state.assessmentResult?.metricScores;
+  const completedSessions = state.sessionHistory.filter((session) => session.status === "complete");
+  const sessionLift = Math.min(10, completedSessions.length * 2);
+  const fallback = metrics[state.path || "corrective"].reduce((memo, [name, value]) => {
+    memo[name] = value;
+    return memo;
+  }, {});
+
+  return {
+    coreControl: Math.min(96, (assessment?.coreControl || fallback["Core Control"]) + sessionLift),
+    mobility: Math.min(96, (assessment?.mobility || fallback.Mobility) + Math.round(sessionLift / 2)),
+    stability: Math.min(96, (assessment?.stability || fallback.Stability) + sessionLift),
+    alignment: Math.min(96, (assessment?.alignment || fallback.Alignment) + Math.round(sessionLift / 2))
+  };
+}
+
+function recentWeeklyBars() {
+  const days = ["M", "T", "W", "T", "F", "S", "S"];
+  const sessions = state.sessionHistory.filter((session) => session.status === "complete").slice(0, 7).reverse();
+  return days.map((day, index) => {
+    const session = sessions[index];
+    return [day, session ? scoreSession(session) : 4, Boolean(session)];
+  });
+}
+
+function todayInsight() {
+  const latest = latestCompletedSession();
+  if (!latest) {
+    return state.path === "postpartum"
+      ? "Start with a gentle foundation session today so FlowMove can begin tracking core control and pressure-aware movement."
+      : "Complete your first session today so FlowMove can start tracking alignment, mobility, and body control.";
+  }
+  const report = generateSessionReport(latest);
+  return `${report.whatImproved} ${report.nextAdjustment}`;
 }
 
 function generateSessionReport(session) {
@@ -230,7 +367,7 @@ function generateSessionReport(session) {
     : "";
 
   return {
-    score: Math.max(62, Math.min(96, 72 + completed * 6 - skipped * 8)),
+    score: scoreSession(session),
     headline:
       completed === session.exercises.length
         ? "Beautifully balanced today, Sarah."
@@ -243,7 +380,12 @@ function generateSessionReport(session) {
       skipped > 0
         ? `${skipped} ${skipped === 1 ? "exercise was" : "exercises were"} skipped, so the next session should stay conservative.${signalNote}`
         : `${template.attention}${signalNote}`,
-    nextAdjustment: session.nextAdjustment || template.next
+    nextAdjustment: session.nextAdjustment || template.next,
+    primaryFocus: sessionPrimaryFocus(session),
+    completed,
+    skipped,
+    elapsedMin: sessionElapsedMinutes(session),
+    completion: sessionCompletionPercent(session)
   };
 }
 
@@ -843,24 +985,14 @@ function main() {
 function today() {
   const isPostpartum = state.path === "postpartum";
   const recommendation = recommendationForToday();
-  const insight = isPostpartum
-    ? "Your pelvis stayed steadier during bridges yesterday. Great progress on deep core engagement."
-    : "Your shoulder mobility stayed smoother yesterday. Great progress on posture control.";
+  const insight = todayInsight();
   const readinessOptions = [
     ["Good", "☻"],
     ["Tired", "☾"],
     ["Sore", "⌘"],
     ["Pain or discomfort", "△"]
   ];
-  const weeklyBars = [
-    ["M", 34, false],
-    ["T", 52, false],
-    ["W", 78, true],
-    ["T", 26, false],
-    ["F", 88, true],
-    ["S", 0, false],
-    ["S", 0, false]
-  ];
+  const weeklyBars = recentWeeklyBars();
   return `
     <section class="view today-dashboard">
       <div class="dashboard-topbar">
@@ -1022,6 +1154,7 @@ function sessionComplete() {
 function report() {
   const session = completedSessionOrFallback();
   const report = generateSessionReport(session);
+  const replayImage = `./assets/workout-${Math.min(Math.max(session.completedExerciseIds.length - 1, 0), 2)}.jpg`;
   state.tab = "progress";
   shell(`
     <section class="view session-report">
@@ -1031,8 +1164,8 @@ function report() {
         <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
       </div>
 
-      <div class="session-complete-pill"><span>⌁＿♧RK</span> Session Complete</div>
-      <h1>Beautifully balanced<br />today, Sarah.</h1>
+      <div class="session-complete-pill"><span>⌁</span> Session Complete</div>
+      <h1>${report.headline.replace(", Sarah.", ",<br />Sarah.")}</h1>
 
       <div class="quality-ring" aria-label="Movement quality ${report.score}%">
         <span>${report.score}%</span>
@@ -1043,10 +1176,10 @@ function report() {
         <div class="report-icon">↗</div>
         <div>
           <h3>What improved</h3>
-          <p>Your <strong>pelvis stayed steadier</strong> during bridges today, and your breathing was more consistent during core work. This stability reflects great progress in your deep stabilizer activation.</p>
+          <p>${report.whatImproved}</p>
           <div class="report-mini-grid">
-            <span>Core Stability:<b>+12%</b></span>
-            <span>Breath Rhythm:<b>Optimal</b></span>
+            <span>Completion:<b>${report.completion}%</b></span>
+            <span>Primary Focus:<b>${report.primaryFocus}</b></span>
           </div>
         </div>
       </div>
@@ -1055,19 +1188,19 @@ function report() {
         <div class="report-icon">⌗</div>
         <div>
           <h3>What needs attention</h3>
-          <p>Your right hip still showed less stability during unilateral movements. We noticed a slight tilt when weight-shifting.</p>
+          <p>${report.needsAttention}</p>
         </div>
       </div>
 
       <div class="replay-card">
-        <img src="./assets/workout-1.jpg" alt="Movement replay" />
-        <button>▣ View Replay</button>
+        <img src="${replayImage}" alt="Movement replay" />
+        <button>${report.completed} completed · ${report.skipped} skipped</button>
       </div>
 
       <div class="next-adjustment-card">
         <p>▣ Next Session Adjustment</p>
-        <h3>Focus on Single-Side Activation</h3>
-        <span>To balance that right hip stability, your next session will automatically include gentle single-side activation drills tailored to your current alignment.</span>
+        <h3>${session.moduleTitle}</h3>
+        <span>${report.nextAdjustment}</span>
         <button onclick="goMain('progress')">Schedule Next</button>
       </div>
 
@@ -1079,6 +1212,36 @@ function report() {
 }
 
 function progress() {
+  const sessions = state.sessionHistory.filter((session) => session.status === "complete");
+  const metric = progressMetrics();
+  const latest = sessions[0];
+  const averageScore = sessions.length
+    ? Math.round(sessions.reduce((total, session) => total + scoreSession(session), 0) / sessions.length)
+    : 0;
+  const latestReport = latest ? generateSessionReport(latest) : null;
+  const sessionHistoryRows = sessions.length
+    ? sessions.slice(0, 5).map((session) => {
+        const score = scoreSession(session);
+        return `
+          <div class="history-row">
+            <img src="./assets/workout-${Math.min(Math.max(session.completedExerciseIds.length - 1, 0), 2)}.jpg" alt="${session.moduleTitle}" />
+            <div>
+              <h3>${session.moduleTitle}</h3>
+              <p>${formatSessionDate(session.completedAt || session.startedAt)} · ${sessionElapsedMinutes(session)} min · ${session.intensity}</p>
+            </div>
+            <div class="history-score"><strong>${score}%</strong><span>Quality</span></div>
+            <b>›</b>
+          </div>
+        `;
+      }).join("")
+    : `
+      <div class="card">
+        <h3>No sessions yet</h3>
+        <p class="copy">Complete your first FlowMove session to start building a body journal from real movement data.</p>
+        <button class="btn" onclick="goMain('today')">Start Session</button>
+      </div>
+    `;
+
   return `
     <section class="view progress-journal">
       <div class="journal-topbar">
@@ -1090,7 +1253,9 @@ function progress() {
       <div class="journal-intro">
         <span class="journal-pill">Body Journal</span>
         <h2>Your Evolution</h2>
-        <p>A graceful journey through mobility and strength. You've completed 12 sessions this month with focus on spinal alignment.</p>
+        <p>${sessions.length
+          ? `You've completed ${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}. Your current average movement quality is ${averageScore}%.`
+          : "Your progress journal will begin after your first completed session."}</p>
         <div class="range-toggle" aria-label="Progress range">
           <button>7 Days</button>
           <button class="active">30 Days</button>
@@ -1101,7 +1266,7 @@ function progress() {
         <div class="journal-card-head">
           <div>
             <h3>Core & Mobility</h3>
-            <p>Stability index improvement +14%</p>
+            <p>${sessions.length ? `${latestReport.primaryFocus} is your strongest recent signal` : "Waiting for first session data"}</p>
           </div>
           <span>⌁</span>
         </div>
@@ -1124,20 +1289,20 @@ function progress() {
 
       <div class="journal-metric-card">
         <div class="metric-title"><span>⚖</span><p>Stability</p></div>
-        <div class="metric-value">88 <small>/100</small></div>
-        <div class="journal-progress-line"><i style="width:88%"></i></div>
+        <div class="metric-value">${metric.stability} <small>/100</small></div>
+        <div class="journal-progress-line"><i style="width:${metric.stability}%"></i></div>
       </div>
 
       <div class="journal-metric-card accent">
         <div class="metric-title"><span>▭</span><p>Alignment</p></div>
-        <div class="metric-value">92 <small>% Accuracy</small></div>
-        <div class="journal-progress-line"><i style="width:92%"></i></div>
+        <div class="metric-value">${metric.alignment} <small>% Accuracy</small></div>
+        <div class="journal-progress-line"><i style="width:${metric.alignment}%"></i></div>
       </div>
 
       <div class="growth-card">
         <h3>Recent Growth</h3>
-        <div class="growth-item"><span>◎</span><div><strong>Lumbar Support</strong><p>Significant reduction in arching during leg lifts.</p></div></div>
-        <div class="growth-item"><span>◎</span><div><strong>Pelvic Floor Engagement</strong><p>Holding contraction 4s longer on average.</p></div></div>
+        <div class="growth-item"><span>◎</span><div><strong>${latest ? latest.moduleTitle : "First Session"}</strong><p>${latestReport ? latestReport.whatImproved : "Complete a session to unlock specific movement notes."}</p></div></div>
+        <div class="growth-item"><span>◎</span><div><strong>Next Focus</strong><p>${latestReport ? latestReport.nextAdjustment : "FlowMove will adapt your next plan after the first session."}</p></div></div>
       </div>
 
       <div class="milestone-card">
@@ -1145,36 +1310,19 @@ function progress() {
         <div class="milestone-content">
           <div class="milestone-ring"><span>75%</span></div>
           <div>
-            <strong>Teaser Mastery</strong>
-            <p>3 more advanced core sessions to unlock.</p>
+            <strong>${state.path === "postpartum" ? "Foundation Consistency" : "Alignment Consistency"}</strong>
+            <p>${Math.max(0, 3 - sessions.length)} more completed sessions to unlock a stronger trend view.</p>
           </div>
         </div>
       </div>
 
       <div class="history-head">
         <h2>Session History</h2>
-        <button>View all journals</button>
+        <button>${sessions.length} total</button>
       </div>
 
       <div class="session-history-list">
-        <div class="history-row">
-          <img src="./assets/session.jpg" alt="Spine articulation series" />
-          <div>
-            <h3>Spine Articulation Series</h3>
-            <p>Oct 24 · 45 min · Moderate Intensity</p>
-          </div>
-          <div class="history-score"><strong>94%</strong><span>Alignment</span></div>
-          <b>›</b>
-        </div>
-        <div class="history-row">
-          <img src="./assets/workout-2.jpg" alt="Lateral stability basics" />
-          <div>
-            <h3>Lateral Stability Basics</h3>
-            <p>Oct 22 · 30 min · Gentle Flow</p>
-          </div>
-          <div class="history-score"><strong>87%</strong><span>Stability</span></div>
-          <b>›</b>
-        </div>
+        ${sessionHistoryRows}
       </div>
     </section>
   `;
@@ -1243,10 +1391,12 @@ function render() {
     safety
   };
   routes[state.screen]();
+  persistState();
 }
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 
+hydrateState();
 render();
