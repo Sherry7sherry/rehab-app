@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" role="img" aria-labelledby="title desc">
+  <title id="title">Heel tap setup</title>
+  <desc id="desc">A woman lying on her back doing a heel tap with phone placed to the side.</desc>
+  <rect width="720" height="480" rx="28" fill="#fbf9f4"/>
+  <rect x="44" y="46" width="632" height="388" rx="24" fill="#f0eee9"/>
+  <path d="M96 382H624" stroke="#c4c8c1" stroke-width="6" stroke-linecap="round"/>
+  <rect x="160" y="340" width="380" height="18" rx="9" fill="#d4e4cd"/>
+  <circle cx="218" cy="310" r="25" fill="#d38a76"/>
+  <path d="M242 316h132" stroke="#182119" stroke-width="17" stroke-linecap="round"/>
+  <path d="M374 316c34-62 72-62 100 0" stroke="#182119" stroke-width="15" stroke-linecap="round" fill="none"/>
+  <path d="M378 318c46 8 74 28 88 62" stroke="#182119" stroke-width="15" stroke-linecap="round" fill="none"/>
+  <path d="M260 310l-32-32M278 318l-34 26" stroke="#182119" stroke-width="12" stroke-linecap="round"/>
+  <rect x="562" y="268" width="54" height="84" rx="12" fill="#1b1c19"/>
+  <rect x="572" y="280" width="34" height="56" rx="6" fill="#dbe5d9"/>
+  <text x="84" y="108" fill="#536250" font-family="Arial, sans-serif" font-size="22" font-weight="700">Side view</text>
+  <text x="84" y="138" fill="#444843" font-family="Arial, sans-serif" font-size="18">Phone captures ribs, pelvis, and legs</text>
+</svg>
