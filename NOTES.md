@@ -12,6 +12,14 @@ The prototype now includes:
 - Screening/risk evaluator in `prototype/data/screening-rules.js`.
 - Mock assessment scoring in `prototype/data/assessment-engine.js`.
 - Rule-based recommendation in `prototype/data/recommendation-engine.js`.
+- Session runtime v0 in `prototype/app.js`, including active session state, exercise progression, skipped/completed exercises, cue events, and elapsed time.
+- Runtime-informed report generation v0, with some remaining hard-coded report presentation content.
+
+Current Git baseline:
+
+- Local branch for continued work: `codex/continue-from-github`
+- Upstream branch: `origin/main`
+- Remote repository: `Sherry7sherry/rehab-app`
 
 ## Major Decisions
 
@@ -54,7 +62,10 @@ goals + path
   -> assessment result
   -> recommendation result
   -> session preview
-  -> workout/report prototype
+  -> session runtime
+  -> workout player
+  -> session report
+  -> progress history
 ```
 
 ## Safety Behavior
@@ -120,6 +131,31 @@ It outputs:
 - recommendation reasons
 - next adjustment
 
+## Session Runtime v0
+
+The GitHub baseline now creates an active session from the recommendation result.
+
+The session object tracks:
+
+- path
+- module id/title/summary
+- selected exercise variants
+- current exercise index
+- completed exercise variant ids
+- skipped exercise variant ids
+- cue events
+- elapsed seconds
+- started/completed timestamps
+
+The workout player advances through variants one by one and can complete, skip, or end a session early.
+
+Next runtime improvements:
+
+- persist active and completed sessions in `localStorage`
+- make browser refresh recover the current state
+- add paused/demo-only/camera-denied states
+- make progress and report screens read fully from session history
+
 ## Known Prototype Limitations
 
 - No backend.
@@ -130,7 +166,7 @@ It outputs:
 - No real video demos.
 - No actual payment/subscription.
 - Some UI images are generated placeholders.
-- Workout player is not yet driven by a session runtime.
+- Some report and progress content is still static presentation copy.
 
 ## GitHub Handoff
 
@@ -145,4 +181,3 @@ Suggested PR title:
 ```text
 Add FlowMove mobile PWA prototype and product logic docs
 ```
-
