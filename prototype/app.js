@@ -51,16 +51,12 @@ const goals = [
     text: "Alignment, mobility, balance, and body control through low-impact movement."
   },
   {
-    id: "posture",
-    title: "Posture & Mobility",
-    text: "Gentle support for shoulders, hips, spine, and long sitting days."
-  },
-  {
-    id: "strength",
-    title: "Strength & Body Control",
-    text: "Pilates-based strength with attention to stability, control, and symmetry."
+    id: "discomfort",
+    title: "Back / Hip / Shoulder Discomfort",
+    text: "Low-impact movement when everyday tension or discomfort is your main focus."
   }
 ];
+const goalIds = goals.map((goal) => goal.id);
 
 const content = window.FlowMoveContent;
 const screening = window.FlowMoveScreening;
@@ -113,7 +109,7 @@ function hydrateState() {
         state[key] = saved[key];
       }
     });
-    state.goals = Array.isArray(state.goals) ? state.goals : [];
+    state.goals = Array.isArray(state.goals) ? state.goals.filter((goal) => goalIds.includes(goal)) : [];
     state.completedAssessmentMovementIds = Array.isArray(state.completedAssessmentMovementIds)
       ? state.completedAssessmentMovementIds
       : [];
@@ -419,11 +415,9 @@ function setScreen(screen) {
   render();
 }
 
-function toggleGoal(id) {
-  state.goals = state.goals.includes(id)
-    ? state.goals.filter((goal) => goal !== id)
-    : [...state.goals, id];
-  state.path = state.goals.includes("postpartum") ? "postpartum" : "corrective";
+function selectGoal(id) {
+  state.goals = [id];
+  state.path = id === "postpartum" ? "postpartum" : "corrective";
   render();
 }
 
@@ -545,28 +539,38 @@ function welcome() {
 }
 
 function goalSelection() {
+  const hasSelection = state.goals.length > 0;
   shell(`
-    <section class="view">
-      <div class="topbar"><div class="brand">FlowMove</div><span class="mini">Step 1 of 6</span></div>
-      <div class="screen-intro">
-        <p class="eyebrow">Your path</p>
-        <h2>What brings you to FlowMove?</h2>
-        <p class="copy">Choose what fits today. You can update your focus later.</p>
+    <section class="view goal-selection-page">
+      <div class="goal-topbar">
+        <button class="goal-back" onclick="setScreen('welcome')" aria-label="Back">←</button>
+        <div class="goal-brand">FlowMove</div>
+        <span></span>
       </div>
-      <div class="stack soft-panel">
+
+      <div class="goal-progress" aria-label="Step 1 of 6"><i></i></div>
+
+      <div class="goal-intro">
+        <h2>What brings you to FlowMove?</h2>
+        <p>Select the focus area that best aligns with your current recovery or movement goals.</p>
+      </div>
+
+      <div class="goal-option-list">
         ${goals
           .map(
             (goal) => `
-              <button class="option ${state.goals.includes(goal.id) ? "selected" : ""}" onclick="toggleGoal('${goal.id}')">
-                <strong>${goal.title}</strong>
-                <span>${goal.text}</span>
+              <button class="goal-radio-option ${state.goals.includes(goal.id) ? "selected" : ""}" onclick="selectGoal('${goal.id}')">
+                <span>${goal.title}</span>
+                <i aria-hidden="true"></i>
               </button>
             `
           )
           .join("")}
       </div>
-      <div style="height: 18px"></div>
-      <button class="btn" onclick="continueFromGoals()">Continue</button>
+
+      <div class="goal-photo-panel" aria-hidden="true"></div>
+
+      <button class="goal-continue ${hasSelection ? "ready" : ""}" onclick="continueFromGoals()" ${hasSelection ? "" : "disabled"}>Continue</button>
     </section>
   `);
 }

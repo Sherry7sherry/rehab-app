@@ -6,6 +6,7 @@ window.FlowMoveRecommendation = {
     if (state.path === "postpartum") signals.add("postpartum");
     if (selectedGoals.includes("posture")) signals.add("posture_goal");
     if (selectedGoals.includes("strength")) signals.add("strength_goal");
+    if (selectedGoals.includes("discomfort")) signals.add("back_discomfort");
     if (selectedGoals.includes("corrective")) signals.add("alignment_goal");
 
     if (state.readiness === "Tired") signals.add("low_energy");
