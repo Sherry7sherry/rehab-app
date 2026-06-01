@@ -1,4 +1,4 @@
-const CACHE_NAME = "flowmove-prototype-v9";
+const CACHE_NAME = "flowmove-prototype-v10";
 const ASSETS = [
   "./",
   "./index.html",

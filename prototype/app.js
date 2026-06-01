@@ -1329,13 +1329,158 @@ function progress() {
 }
 
 function programs() {
-  const modules = content.programModules.filter((module) => module.path === state.path);
+  const isPostpartum = state.path === "postpartum";
+  const pathModules = isPostpartum
+    ? [
+        {
+          id: "foundation_reset",
+          title: "Foundation Reset",
+          summary: "Breathing mechanics and pelvic floor re-education for the initial weeks.",
+          duration: "14 days",
+          level: "Gentle",
+          icon: "⌁",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "deep_core_rebuild",
+          title: "Deep Core Rebuild",
+          summary: "Focus on the transverse abdominis and pressure-aware core control.",
+          duration: "21 days",
+          level: "Steady",
+          icon: "◎",
+          tone: "rose",
+          locked: false
+        },
+        {
+          id: "pelvis_hip_stability",
+          title: "Pelvis & Hip Stability",
+          summary: "Correcting pelvis drift and building a balanced structural base.",
+          duration: "14 days",
+          level: "Focused",
+          icon: "⚖",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "posture_mobility_locked",
+          title: "Posture & Mobility",
+          summary: "Counteracting nursing posture and releasing upper body tension.",
+          icon: "✣",
+          tone: "neutral",
+          locked: true
+        },
+        {
+          id: "return_exercise_locked",
+          title: "Strength & Return to Exercise",
+          summary: "Dynamic progressions to transition back to your favorite sports.",
+          icon: "⌘",
+          tone: "neutral",
+          locked: true
+        }
+      ]
+    : [
+        {
+          id: "posture_reset",
+          title: "Posture Reset",
+          summary: "Shoulder, rib, and upper-back mobility for long sitting days.",
+          duration: "14 days",
+          level: "Gentle",
+          icon: "✣",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "hip_glute_stability",
+          title: "Hip & Glute Stability",
+          summary: "Glute activation, hip control, and balanced lower-body alignment.",
+          duration: "21 days",
+          level: "Steady",
+          icon: "⚖",
+          tone: "rose",
+          locked: false
+        },
+        {
+          id: "back_friendly_strength",
+          title: "Back-Friendly Strength",
+          summary: "Low-impact strength with spine-friendly control and measured tempo.",
+          duration: "14 days",
+          level: "Focused",
+          icon: "⌁",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "balance_alignment",
+          title: "Balance & Alignment",
+          summary: "Left-right control and everyday movement confidence.",
+          duration: "14 days",
+          level: "Control",
+          icon: "◎",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "advanced_control_locked",
+          title: "Strength & Body Control",
+          summary: "Progressive Pilates sequences for smoother coordinated strength.",
+          icon: "⌘",
+          tone: "neutral",
+          locked: true
+        }
+      ];
   return `
-    <section class="view">
-      <div class="topbar"><div class="brand">Programs</div><span class="mini">${state.path === "postpartum" ? "Postpartum" : "Corrective"}</span></div>
-      <h2>Modules matched to your path.</h2>
-      <div class="stack">
-        ${modules.map((module, index) => `<div class="card"><h3>${module.title}</h3><p class="copy">${module.summary}</p><p class="mini">${index < 2 ? "Recommended now" : "Available as you progress"}</p></div>`).join("")}
+    <section class="view programs-path-page">
+      <div class="programs-topbar">
+        <button class="menu-button" aria-label="Menu"><span></span><span></span><span></span></button>
+        <div class="programs-brand">FlowMove</div>
+        <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
+      </div>
+
+      <div class="programs-intro">
+        <p class="programs-eyebrow">Personalized Path</p>
+        <h2>${isPostpartum ? "Postpartum Recovery" : "Corrective Pilates"}</h2>
+        <p>${isPostpartum
+          ? "A holistic journey to restore your strength, alignment, and confidence from the inside out."
+          : "A focused path to improve posture, mobility, balance, and everyday movement control."}</p>
+      </div>
+
+      <div class="programs-video-card">
+        <img src="./assets/session.jpg" alt="${isPostpartum ? "Postpartum Recovery" : "Corrective Pilates"} intro" />
+        <button>▷ Watch Intro</button>
+      </div>
+
+      <div class="program-module-list">
+        ${pathModules.map((module, index) => `
+          <article class="program-module-card ${module.locked ? "locked" : ""}">
+            <div class="program-card-top">
+              <span class="program-icon ${module.tone}">${module.icon}</span>
+              <span class="program-count">${module.locked ? "♙" : String(index + 1).padStart(2, "0") + " / 05"}</span>
+            </div>
+            <h3>${module.title}</h3>
+            <p>${module.summary}</p>
+            ${module.locked ? "" : `
+              <div class="program-tags">
+                <span>${module.duration}</span>
+                <span>${module.level}</span>
+              </div>
+            `}
+            <button
+              class="program-arrow"
+              onclick="${module.locked ? "" : `setScreen('session-preview')`}"
+              aria-label="${module.locked ? "Locked module" : `Open ${module.title}`}"
+              ${module.locked ? "disabled" : ""}
+            >→</button>
+          </article>
+        `).join("")}
+      </div>
+
+      <div class="alignment-scan-card">
+        <div>
+          <h3>Alignment Scan</h3>
+          <p>Check your pelvic tilt in real-time with AI.</p>
+        </div>
+        <button onclick="setScreen('camera')">Start Scan</button>
       </div>
     </section>
   `;
