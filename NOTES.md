@@ -16,6 +16,7 @@ The prototype now includes:
 - `localStorage` persistence for onboarding path, screening answers, assessment result, recommendation snapshot, active session, readiness, and completed session history.
 - Runtime-informed report generation v0 using completed/skipped exercises, cue events, assessment signals, recommendation context, and movement quality scoring.
 - Progress journal v0 reading from completed session history instead of fixed example entries.
+- Dedicated Back / Hip / Shoulder Discomfort screening path with area, timing, severity, and sharp/radiating pain safety checks.
 
 Current Git baseline:
 
@@ -41,6 +42,9 @@ Current Git baseline:
 Welcome
   -> Goal Selection
   -> Path-specific Screening
+     -> Postpartum Safety Screening
+     -> Corrective Pilates Focus Screening
+     -> Back / Hip / Shoulder Discomfort Screening
   -> Training Preferences
   -> Camera Setup
   -> Baseline Assessment Intro
@@ -81,6 +85,7 @@ High-risk examples block normal training and show Safety Warning:
 - pelvic heaviness
 - significant C-section scar pain
 - high pain/discomfort
+- radiating or sharp pain
 - recent injury or surgery
 
 Caution examples continue but downgrade recommendation to gentle:

@@ -58,6 +58,7 @@
   - bleeding
   - dizziness
   - sharp pain
+  - radiating pain
   - recent surgery
   - high pain score
 - Keep all safety language non-diagnostic.

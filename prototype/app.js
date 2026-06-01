@@ -26,6 +26,10 @@ const state = {
   },
   correctiveScreening: {
     focusArea: "posture",
+    discomfortArea: "lower_back",
+    noticeableWhen: "after_sitting",
+    severity: "5",
+    radiatesOrSharp: "no",
     discomfortLevel: "low",
     sittingHours: "4_7",
     pilatesExperience: "new",
@@ -424,7 +428,16 @@ function selectGoal(id) {
 
 function continueFromGoals() {
   if (!state.path) state.path = "corrective";
-  setScreen(state.path === "postpartum" ? "postpartum-screening" : "corrective-screening");
+  if (state.path === "postpartum") {
+    setScreen("postpartum-screening");
+    return;
+  }
+  setScreen(state.goals[0] === "discomfort" ? "discomfort-screening" : "corrective-screening");
+}
+
+function screeningReturnScreen() {
+  if (state.path === "postpartum") return "postpartum-screening";
+  return state.goals[0] === "discomfort" ? "discomfort-screening" : "corrective-screening";
 }
 
 function setRisk(value) {
@@ -439,6 +452,15 @@ function updatePostpartumScreening(key, value) {
 
 function updateCorrectiveScreening(key, value) {
   state.correctiveScreening[key] = value;
+  render();
+}
+
+function updateDiscomfortScreening(key, value) {
+  state.correctiveScreening[key] = value;
+  if (key === "severity") {
+    const severity = Number(value);
+    state.correctiveScreening.discomfortLevel = severity <= 3 ? "low" : severity <= 6 ? "moderate" : "high";
+  }
   render();
 }
 
@@ -745,6 +767,95 @@ function correctiveScreening() {
   `);
 }
 
+function discomfortScreening() {
+  const answers = state.correctiveScreening;
+  const areaOptions = [
+    ["upper_back", "Upper Back", "✣"],
+    ["lower_back", "Lower Back", "♙"],
+    ["hips", "Hips", "┃"],
+    ["shoulders", "Shoulders", "▌"]
+  ];
+  const timingOptions = [
+    ["after_waking", "After waking up"],
+    ["after_sitting", "After sitting for long periods"],
+    ["during_movement", "During movement"],
+    ["constant", "Constant"]
+  ];
+  shell(`
+    <section class="view discomfort-screening-page">
+      <div class="discomfort-topbar">
+        <button class="goal-back" onclick="setScreen('goals')" aria-label="Back">←</button>
+        <div class="discomfort-brand">FlowMove</div>
+        <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
+      </div>
+
+      <div class="discomfort-intro">
+        <h2>Tell us about your discomfort.</h2>
+        <p>Your responses help our AI tailor a movement path focused on long-term alignment and relief.</p>
+      </div>
+
+      <div class="discomfort-section">
+        <p class="discomfort-label">Where do you feel it most?</p>
+        <div class="discomfort-area-grid">
+          ${areaOptions.map(([value, label, icon]) => `
+            <button class="discomfort-area-card ${answers.discomfortArea === value ? "selected" : ""}" onclick="updateDiscomfortScreening('discomfortArea', '${value}')">
+              <span>${icon}</span>
+              <strong>${label}</strong>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="discomfort-section">
+        <p class="discomfort-label">When is it most noticeable?</p>
+        <div class="discomfort-radio-list">
+          ${timingOptions.map(([value, label]) => `
+            <button class="discomfort-radio-row ${answers.noticeableWhen === value ? "selected" : ""}" onclick="updateDiscomfortScreening('noticeableWhen', '${value}')">
+              <i aria-hidden="true"></i>
+              <span>${label}</span>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="discomfort-section">
+        <div class="discomfort-slider-head">
+          <p class="discomfort-label">Severity (1-10)</p>
+          <strong>${answers.severity}</strong>
+        </div>
+        <input
+          class="discomfort-slider"
+          type="range"
+          min="1"
+          max="10"
+          value="${answers.severity}"
+          oninput="updateDiscomfortScreening('severity', this.value)"
+          aria-label="Severity from 1 to 10"
+        />
+        <div class="discomfort-slider-labels">
+          <span>Mild</span>
+          <span>Moderate</span>
+          <span>Severe</span>
+        </div>
+      </div>
+
+      <div class="discomfort-section">
+        <p class="discomfort-label">Does it radiate or feel sharp?</p>
+        <div class="discomfort-segmented">
+          ${[
+            ["yes", "Yes"],
+            ["no", "No"]
+          ].map(([value, label]) => `
+            <button class="${answers.radiatesOrSharp === value ? "selected" : ""}" onclick="updateDiscomfortScreening('radiatesOrSharp', '${value}')">${label}</button>
+          `).join("")}
+        </div>
+      </div>
+
+      <button class="discomfort-save-button" onclick="continueCorrectiveScreening()">Save and Continue <span>→</span></button>
+    </section>
+  `);
+}
+
 function field(label, options) {
   return `
     <div class="field">
@@ -800,7 +911,7 @@ function chips(label, options, selected = []) {
 function preferences() {
   shell(`
     <section class="view">
-      ${topbar(state.path === "postpartum" ? "postpartum-screening" : "corrective-screening")}
+      ${topbar(screeningReturnScreen())}
       <div class="screen-intro">
         <p class="eyebrow">Training rhythm</p>
         <h2>Make it fit your week.</h2>
@@ -1568,7 +1679,7 @@ function safety() {
       <div class="safety-rule" aria-hidden="true"></div>
       <p class="safety-note">This is not a diagnosis.</p>
       <div class="safety-image" role="img" aria-label="Calm Pilates studio"></div>
-      <button class="safety-button" onclick="setScreen(state.path === 'postpartum' ? 'postpartum-screening' : 'corrective-screening')">I Understand <span>→</span></button>
+      <button class="safety-button" onclick="setScreen(screeningReturnScreen())">I Understand <span>→</span></button>
       <p class="terms-note">By continuing, you agree to our terms of service.</p>
     </section>
   `);
@@ -1580,6 +1691,7 @@ function render() {
     goals: goalSelection,
     "postpartum-screening": postpartumScreening,
     "corrective-screening": correctiveScreening,
+    "discomfort-screening": discomfortScreening,
     preferences,
     camera: cameraSetup,
     "assessment-intro": assessmentIntro,

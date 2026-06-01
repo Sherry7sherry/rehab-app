@@ -14,6 +14,16 @@ window.FlowMoveRecommendation = {
     if (state.correctiveScreening?.focusArea === "stability") signals.add("hip_instability");
     if (state.correctiveScreening?.focusArea === "strength") signals.add("strength_goal");
 
+    if (state.correctiveScreening?.discomfortArea === "lower_back") signals.add("back_discomfort");
+    if (state.correctiveScreening?.discomfortArea === "upper_back") {
+      signals.add("back_discomfort");
+      signals.add("limited_shoulder_mobility");
+    }
+    if (state.correctiveScreening?.discomfortArea === "hips") signals.add("hip_instability");
+    if (state.correctiveScreening?.discomfortArea === "shoulders") signals.add("limited_shoulder_mobility");
+    if (state.correctiveScreening?.noticeableWhen === "after_sitting") signals.add("long_sitting");
+    if (Number(state.correctiveScreening?.severity || 0) >= 4) signals.add("moderate_discomfort");
+
     if (state.readiness === "Tired") signals.add("low_energy");
     if (state.readiness === "Sore") signals.add("recovery_needed");
     if (state.readiness === "Pain or discomfort") signals.add("discomfort_today");
