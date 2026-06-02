@@ -46,6 +46,10 @@ window.FlowMoveScreening = {
       highRisk.push("recent_injury_or_surgery");
     }
 
+    if (answers.radiatesOrSharp === "yes") {
+      highRisk.push("radiating_or_sharp_pain");
+    }
+
     if (answers.discomfortLevel === "moderate") {
       caution.push("moderate_discomfort");
     }

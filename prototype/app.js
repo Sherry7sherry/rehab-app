@@ -8,6 +8,7 @@ const state = {
   completedAssessmentMovementIds: [],
   skippedAssessmentMovementIds: [],
   assessmentResult: null,
+  recommendationResult: null,
   activeSession: null,
   sessionHistory: [],
   risk: false,
@@ -17,6 +18,7 @@ const state = {
     birthType: "vaginal",
     clinicianClearance: "cleared",
     symptoms: [],
+    concernNotes: "",
     cSectionScarPain: "none",
     abdominalSeparationConcern: "no",
     pelvicFloorConcern: "no",
@@ -24,6 +26,10 @@ const state = {
   },
   correctiveScreening: {
     focusArea: "posture",
+    discomfortArea: "lower_back",
+    noticeableWhen: "after_sitting",
+    severity: "5",
+    radiatesOrSharp: "no",
     discomfortLevel: "low",
     sittingHours: "4_7",
     pilatesExperience: "new",
@@ -31,6 +37,12 @@ const state = {
     recentInjuryOrSurgery: "no"
   }
 };
+
+const defaultPostpartumScreening = {
+  ...state.postpartumScreening,
+  symptoms: [...state.postpartumScreening.symptoms]
+};
+const defaultCorrectiveScreening = { ...state.correctiveScreening };
 
 const goals = [
   {
@@ -44,22 +56,78 @@ const goals = [
     text: "Alignment, mobility, balance, and body control through low-impact movement."
   },
   {
-    id: "posture",
-    title: "Posture & Mobility",
-    text: "Gentle support for shoulders, hips, spine, and long sitting days."
-  },
-  {
-    id: "strength",
-    title: "Strength & Body Control",
-    text: "Pilates-based strength with attention to stability, control, and symmetry."
+    id: "discomfort",
+    title: "Back / Hip / Shoulder Discomfort",
+    text: "Low-impact movement when everyday tension or discomfort is your main focus."
   }
 ];
+const goalIds = goals.map((goal) => goal.id);
 
 const content = window.FlowMoveContent;
 const screening = window.FlowMoveScreening;
 const assessmentEngine = window.FlowMoveAssessment;
 const recommendationEngine = window.FlowMoveRecommendation;
 const assessmentMoves = content.assessmentMovements;
+const STORAGE_KEY = "flowmove.prototype.state.v1";
+const PERSISTED_KEYS = [
+  "screen",
+  "path",
+  "goals",
+  "readiness",
+  "tab",
+  "assessmentStep",
+  "completedAssessmentMovementIds",
+  "skippedAssessmentMovementIds",
+  "assessmentResult",
+  "recommendationResult",
+  "activeSession",
+  "sessionHistory",
+  "risk",
+  "screeningResult",
+  "postpartumScreening",
+  "correctiveScreening"
+];
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function persistState() {
+  try {
+    const snapshot = PERSISTED_KEYS.reduce((memo, key) => {
+      memo[key] = state[key];
+      return memo;
+    }, {});
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch (error) {
+    // Storage can fail in private browsing; the prototype should still run.
+  }
+}
+
+function hydrateState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    PERSISTED_KEYS.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(saved, key)) {
+        state[key] = saved[key];
+      }
+    });
+    state.goals = Array.isArray(state.goals) ? state.goals.filter((goal) => goalIds.includes(goal)) : [];
+    state.completedAssessmentMovementIds = Array.isArray(state.completedAssessmentMovementIds)
+      ? state.completedAssessmentMovementIds
+      : [];
+    state.skippedAssessmentMovementIds = Array.isArray(state.skippedAssessmentMovementIds)
+      ? state.skippedAssessmentMovementIds
+      : [];
+    state.sessionHistory = Array.isArray(state.sessionHistory) ? state.sessionHistory : [];
+    state.postpartumScreening = { ...clone(defaultPostpartumScreening), ...(state.postpartumScreening || {}) };
+    state.correctiveScreening = { ...clone(defaultCorrectiveScreening), ...(state.correctiveScreening || {}) };
+  } catch (error) {
+    localStorage.removeItem(STORAGE_KEY);
+  }
+}
 
 function getVariant(id) {
   return content.exerciseVariants.find((variant) => variant.id === id);
@@ -74,15 +142,17 @@ function getModule(id) {
 }
 
 function moduleForToday() {
-  return recommendationEngine.recommend({ state, content }).module;
+  return recommendationForToday().module;
 }
 
 function sessionVariantsForToday() {
-  return recommendationEngine.recommend({ state, content }).variants;
+  return recommendationForToday().variants;
 }
 
 function recommendationForToday() {
-  return recommendationEngine.recommend({ state, content });
+  const recommendation = recommendationEngine.recommend({ state, content });
+  state.recommendationResult = recommendation;
+  return recommendation;
 }
 
 function variantLabel(variant) {
@@ -215,7 +285,75 @@ function sessionCompletionPercent(session = state.activeSession) {
 
 function completedSessionOrFallback() {
   if (state.activeSession) return state.activeSession;
+  if (state.sessionHistory.length) return state.sessionHistory[0];
   return buildSessionFromRecommendation(recommendationForToday());
+}
+
+function scoreSession(session) {
+  if (!session?.exercises?.length) return 0;
+  const completed = session.completedExerciseIds.length;
+  const skipped = session.skippedExerciseIds.length;
+  return Math.max(52, Math.min(96, 68 + completed * 5 - skipped * 7));
+}
+
+function sessionElapsedMinutes(session) {
+  return Math.max(1, Math.round((session?.elapsedSec || 0) / 60));
+}
+
+function formatSessionDate(timestamp) {
+  if (!timestamp) return "Today";
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(timestamp));
+}
+
+function latestCompletedSession() {
+  return state.sessionHistory.find((session) => session.status === "complete") || null;
+}
+
+function sessionPrimaryFocus(session) {
+  const capabilities = session?.exercises?.flatMap((exercise) => exercise.capabilities || []) || [];
+  const counts = capabilities.reduce((memo, capability) => {
+    memo[capability] = (memo[capability] || 0) + 1;
+    return memo;
+  }, {});
+  const [primary] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ["control"];
+  return humanizeCapability(primary);
+}
+
+function progressMetrics() {
+  const assessment = state.assessmentResult?.metricScores;
+  const completedSessions = state.sessionHistory.filter((session) => session.status === "complete");
+  const sessionLift = Math.min(10, completedSessions.length * 2);
+  const fallback = metrics[state.path || "corrective"].reduce((memo, [name, value]) => {
+    memo[name] = value;
+    return memo;
+  }, {});
+
+  return {
+    coreControl: Math.min(96, (assessment?.coreControl || fallback["Core Control"]) + sessionLift),
+    mobility: Math.min(96, (assessment?.mobility || fallback.Mobility) + Math.round(sessionLift / 2)),
+    stability: Math.min(96, (assessment?.stability || fallback.Stability) + sessionLift),
+    alignment: Math.min(96, (assessment?.alignment || fallback.Alignment) + Math.round(sessionLift / 2))
+  };
+}
+
+function recentWeeklyBars() {
+  const days = ["M", "T", "W", "T", "F", "S", "S"];
+  const sessions = state.sessionHistory.filter((session) => session.status === "complete").slice(0, 7).reverse();
+  return days.map((day, index) => {
+    const session = sessions[index];
+    return [day, session ? scoreSession(session) : 4, Boolean(session)];
+  });
+}
+
+function todayInsight() {
+  const latest = latestCompletedSession();
+  if (!latest) {
+    return state.path === "postpartum"
+      ? "Start with a gentle foundation session today so FlowMove can begin tracking core control and pressure-aware movement."
+      : "Complete your first session today so FlowMove can start tracking alignment, mobility, and body control.";
+  }
+  const report = generateSessionReport(latest);
+  return `${report.whatImproved} ${report.nextAdjustment}`;
 }
 
 function generateSessionReport(session) {
@@ -230,7 +368,7 @@ function generateSessionReport(session) {
     : "";
 
   return {
-    score: Math.max(62, Math.min(96, 72 + completed * 6 - skipped * 8)),
+    score: scoreSession(session),
     headline:
       completed === session.exercises.length
         ? "Beautifully balanced today, Sarah."
@@ -243,7 +381,12 @@ function generateSessionReport(session) {
       skipped > 0
         ? `${skipped} ${skipped === 1 ? "exercise was" : "exercises were"} skipped, so the next session should stay conservative.${signalNote}`
         : `${template.attention}${signalNote}`,
-    nextAdjustment: session.nextAdjustment || template.next
+    nextAdjustment: session.nextAdjustment || template.next,
+    primaryFocus: sessionPrimaryFocus(session),
+    completed,
+    skipped,
+    elapsedMin: sessionElapsedMinutes(session),
+    completion: sessionCompletionPercent(session)
   };
 }
 
@@ -277,17 +420,24 @@ function setScreen(screen) {
   render();
 }
 
-function toggleGoal(id) {
-  state.goals = state.goals.includes(id)
-    ? state.goals.filter((goal) => goal !== id)
-    : [...state.goals, id];
-  state.path = state.goals.includes("postpartum") ? "postpartum" : "corrective";
+function selectGoal(id) {
+  state.goals = [id];
+  state.path = id === "postpartum" ? "postpartum" : "corrective";
   render();
 }
 
 function continueFromGoals() {
   if (!state.path) state.path = "corrective";
-  setScreen(state.path === "postpartum" ? "postpartum-screening" : "corrective-screening");
+  if (state.path === "postpartum") {
+    setScreen("postpartum-screening");
+    return;
+  }
+  setScreen(state.goals[0] === "discomfort" ? "discomfort-screening" : "corrective-screening");
+}
+
+function screeningReturnScreen() {
+  if (state.path === "postpartum") return "postpartum-screening";
+  return state.goals[0] === "discomfort" ? "discomfort-screening" : "corrective-screening";
 }
 
 function setRisk(value) {
@@ -305,12 +455,36 @@ function updateCorrectiveScreening(key, value) {
   render();
 }
 
+function updateDiscomfortScreening(key, value) {
+  state.correctiveScreening[key] = value;
+  if (key === "severity") {
+    const severity = Number(value);
+    state.correctiveScreening.discomfortLevel = severity <= 3 ? "low" : severity <= 6 ? "moderate" : "high";
+  }
+  render();
+}
+
 function togglePostpartumSymptom(symptom) {
   const symptoms = state.postpartumScreening.symptoms;
   state.postpartumScreening.symptoms = symptoms.includes(symptom)
     ? symptoms.filter((item) => item !== symptom)
     : [...symptoms, symptom];
   render();
+}
+
+function togglePostpartumSymptomGroup(group) {
+  const items = group.split(",");
+  const symptoms = state.postpartumScreening.symptoms;
+  const shouldRemove = items.some((item) => symptoms.includes(item));
+  state.postpartumScreening.symptoms = shouldRemove
+    ? symptoms.filter((item) => !items.includes(item))
+    : Array.from(new Set([...symptoms, ...items]));
+  render();
+}
+
+function updatePostpartumNotes(value) {
+  state.postpartumScreening.concernNotes = value;
+  persistState();
 }
 
 function continuePostpartumScreening() {
@@ -403,144 +577,281 @@ function welcome() {
 }
 
 function goalSelection() {
+  const hasSelection = state.goals.length > 0;
   shell(`
-    <section class="view">
-      <div class="topbar"><div class="brand">FlowMove</div><span class="mini">Step 1 of 6</span></div>
-      <div class="screen-intro">
-        <p class="eyebrow">Your path</p>
-        <h2>What brings you to FlowMove?</h2>
-        <p class="copy">Choose what fits today. You can update your focus later.</p>
+    <section class="view goal-selection-page">
+      <div class="goal-topbar">
+        <button class="goal-back" onclick="setScreen('welcome')" aria-label="Back">←</button>
+        <div class="goal-brand">FlowMove</div>
+        <span></span>
       </div>
-      <div class="stack soft-panel">
+
+      <div class="goal-progress" aria-label="Step 1 of 6"><i></i></div>
+
+      <div class="goal-intro">
+        <h2>What brings you to FlowMove?</h2>
+        <p>Select the focus area that best aligns with your current recovery or movement goals.</p>
+      </div>
+
+      <div class="goal-option-list">
         ${goals
           .map(
             (goal) => `
-              <button class="option ${state.goals.includes(goal.id) ? "selected" : ""}" onclick="toggleGoal('${goal.id}')">
-                <strong>${goal.title}</strong>
-                <span>${goal.text}</span>
+              <button class="goal-radio-option ${state.goals.includes(goal.id) ? "selected" : ""}" onclick="selectGoal('${goal.id}')">
+                <span>${goal.title}</span>
+                <i aria-hidden="true"></i>
               </button>
             `
           )
           .join("")}
       </div>
-      <div style="height: 18px"></div>
-      <button class="btn" onclick="continueFromGoals()">Continue</button>
+
+      <div class="goal-photo-panel" aria-hidden="true"></div>
+
+      <button class="goal-continue ${hasSelection ? "ready" : ""}" onclick="continueFromGoals()" ${hasSelection ? "" : "disabled"}>Continue</button>
     </section>
   `);
 }
 
 function postpartumScreening() {
   const answers = state.postpartumScreening;
+  const symptomCards = [
+    {
+      value: "bleeding,dizziness",
+      title: "Bleeding or dizziness",
+      detail: "Significant spotting or lightheadedness when moving."
+    },
+    {
+      value: "pelvic_heaviness,leakage",
+      title: "Pelvic heaviness or leakage",
+      detail: "A feeling of pressure or involuntary bladder leakage."
+    },
+    {
+      value: "sharp_pain",
+      title: "Sharp or unusual pain",
+      detail: "Specifically in the pelvic, back, or abdominal regions."
+    }
+  ];
   shell(`
-    <section class="view">
-      ${topbar("goals")}
-      <div class="screen-intro">
-        <p class="eyebrow">Safety screening</p>
+    <section class="view postpartum-screening-page">
+      <div class="screening-topbar">
+        <button class="goal-back" onclick="setScreen('goals')" aria-label="Back">←</button>
+        <div class="screening-brand">FlowMove</div>
+        <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
+      </div>
+
+      <div class="screening-progress-head">
+        <span>Step 1 of 3: Safety Screening</span>
+        <span>33%</span>
+      </div>
+      <div class="screening-progress"><i></i></div>
+
+      <div class="postpartum-screening-intro">
         <h2>First, a few postpartum safety checks.</h2>
-        <p class="copy">FlowMove is movement guidance, not medical diagnosis. These answers help us choose a safer starting point.</p>
+        <p>Your body has done something incredible. These questions help us tailor your movement to ensure your recovery is safe, supportive, and restorative.</p>
       </div>
-      <div class="stack">
-        ${selectField("How long postpartum are you?", "postpartumDuration", answers.postpartumDuration, [
-          ["6_12_weeks", "6-12 weeks"],
-          ["3_6_months", "3-6 months"],
-          ["6_12_months", "6-12 months"],
-          ["12_24_months", "12-24 months"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Birth type", "birthType", answers.birthType, [
-          ["vaginal", "Vaginal birth"],
-          ["c_section", "C-section"],
-          ["prefer_not", "Prefer not to say"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Clinician clearance", "clinicianClearance", answers.clinicianClearance, [
-          ["cleared", "Yes, cleared for exercise"],
-          ["not_yet", "Not yet"],
-          ["not_sure", "Not sure"]
-        ], "updatePostpartumScreening")}
-        ${symptomChips("Any symptoms today?", [
-          ["leakage", "Leakage"],
-          ["pelvic_heaviness", "Pelvic heaviness"],
-          ["sharp_pain", "Sharp pain"],
-          ["dizziness", "Dizziness"],
-          ["bleeding", "Bleeding"]
-        ], answers.symptoms)}
-        ${selectField("C-section scar pain", "cSectionScarPain", answers.cSectionScarPain, [
-          ["none", "None"],
-          ["mild", "Mild"],
-          ["significant", "Significant"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Abdominal separation concern", "abdominalSeparationConcern", answers.abdominalSeparationConcern, [
-          ["no", "No"],
-          ["yes", "Yes"],
-          ["not_sure", "Not sure"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Pelvic floor concern", "pelvicFloorConcern", answers.pelvicFloorConcern, [
-          ["no", "No"],
-          ["yes", "Yes"],
-          ["not_sure", "Not sure"]
-        ], "updatePostpartumScreening")}
-        ${selectField("Current activity level", "activityLevel", answers.activityLevel, [
-          ["very_gentle", "Very gentle"],
-          ["light_walking", "Light walking"],
-          ["some_pilates", "Some Pilates"],
-          ["regular", "Regular exercise"]
-        ], "updatePostpartumScreening")}
+
+      <div class="postpartum-form">
+        <div class="screening-question">
+          <p>How long postpartum are you?</p>
+          <div class="screening-grid-options">
+            ${[
+              ["0_6_weeks", "0-6 weeks"],
+              ["6_12_weeks", "6-12 weeks"],
+              ["3_6_months", "3-6 months"],
+              ["6_12_months", "6+ months"]
+            ].map(([value, label]) => `
+              <button class="${answers.postpartumDuration === value ? "selected" : ""}" onclick="updatePostpartumScreening('postpartumDuration', '${value}')">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Delivery method</p>
+          <div class="screening-segmented two">
+            ${[
+              ["vaginal", "Vaginal birth"],
+              ["c_section", "C-section"]
+            ].map(([value, label]) => `
+              <button class="${answers.birthType === value ? "selected" : ""}" onclick="updatePostpartumScreening('birthType', '${value}')">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Have you been cleared for exercise?</p>
+          <small>Typically during your 6-week obstetrician or midwife check-up.</small>
+          <div class="screening-segmented two">
+            ${[
+              ["cleared", "Yes, I am cleared"],
+              ["not_yet", "Not yet"]
+            ].map(([value, label]) => `
+              <button class="${answers.clinicianClearance === value ? "selected" : ""}" onclick="updatePostpartumScreening('clinicianClearance', '${value}')">${label}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Are you experiencing any of the following?</p>
+          <div class="symptom-card-list">
+            ${symptomCards.map((card) => {
+              const values = card.value.split(",");
+              const selected = values.some((value) => answers.symptoms.includes(value));
+              return `
+                <button class="symptom-check-card ${selected ? "selected" : ""}" onclick="togglePostpartumSymptomGroup('${card.value}')">
+                  <i aria-hidden="true"></i>
+                  <span>
+                    <strong>${card.title}</strong>
+                    <small>${card.detail}</small>
+                  </span>
+                </button>
+              `;
+            }).join("")}
+          </div>
+        </div>
+
+        <div class="screening-question">
+          <p>Any abdominal separation or pelvic floor concerns?</p>
+          <textarea
+            class="screening-textarea"
+            placeholder="Tell us in your own words how your core and pelvic floor feel..."
+            oninput="updatePostpartumNotes(this.value)"
+          >${answers.concernNotes || ""}</textarea>
+        </div>
+
+        <div class="screening-safety-note">
+          <span>i</span>
+          <p>Your safety is our priority. If you've selected any symptoms above, we'll suggest modifications or specialized pelvic health content first.</p>
+        </div>
       </div>
-      <div style="height: 18px"></div>
-      <button class="btn" onclick="continuePostpartumScreening()">Continue</button>
-      <button class="btn secondary" onclick="setRisk(true)">Preview safety warning</button>
+
+      <button class="screening-save-button" onclick="continuePostpartumScreening()">Save and Continue</button>
+      <p class="screening-disclaimer">This is a screening, not a medical diagnosis.</p>
     </section>
   `);
 }
 
 function correctiveScreening() {
   const answers = state.correctiveScreening;
+  const focusOptions = [
+    ["posture", "Posture", "✣"],
+    ["mobility", "Mobility", "♙"],
+    ["stability", "Stability", "⚖"],
+    ["strength", "Strength", "⌘"]
+  ];
   shell(`
-    <section class="view">
-      ${topbar("goals")}
-      <div class="screen-intro">
-        <p class="eyebrow">Movement profile</p>
+    <section class="view corrective-screening-page">
+      <div class="corrective-screening-topbar">
+        <button class="corrective-close" onclick="setScreen('goals')" aria-label="Close">×</button>
+        <div class="corrective-mini-progress" aria-hidden="true"><i></i></div>
+        <span>Step 1/6</span>
+      </div>
+
+      <div class="corrective-screening-intro">
         <h2>Tell us what your body needs most.</h2>
-        <p class="copy">We will use this to shape your first assessment and plan.</p>
+        <p>Your responses allow our AI to tailor a corrective routine specifically for your unique alignment and posture profile.</p>
       </div>
-      <div class="stack">
-        ${selectField("Main focus area", "focusArea", answers.focusArea, [
-          ["posture", "Posture"],
-          ["back", "Back"],
-          ["hips", "Hips"],
-          ["shoulders", "Shoulders"],
-          ["knees", "Knees"],
-          ["full_body", "Full body"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Pain or discomfort", "discomfortLevel", answers.discomfortLevel, [
-          ["low", "0-2 low"],
-          ["mild", "3-4 mild"],
-          ["moderate", "5-6 moderate"],
-          ["high", "7+ high"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Sitting time per day", "sittingHours", answers.sittingHours, [
-          ["under_4", "Less than 4 hours"],
-          ["4_7", "4-7 hours"],
-          ["8_plus", "8+ hours"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Pilates experience", "pilatesExperience", answers.pilatesExperience, [
-          ["new", "New"],
-          ["some", "Some experience"],
-          ["regular", "Regular practice"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Current activity level", "activityLevel", answers.activityLevel, [
-          ["gentle", "Gentle"],
-          ["light", "Light"],
-          ["active", "Active"]
-        ], "updateCorrectiveScreening")}
-        ${selectField("Recent injury or surgery?", "recentInjuryOrSurgery", answers.recentInjuryOrSurgery, [
-          ["no", "No"],
-          ["yes", "Yes"],
-          ["not_sure", "Not sure"]
-        ], "updateCorrectiveScreening")}
+
+      <div class="corrective-focus-grid">
+        ${focusOptions.map(([value, label, icon]) => `
+          <button class="corrective-focus-card ${answers.focusArea === value ? "selected" : ""}" onclick="updateCorrectiveScreening('focusArea', '${value}')">
+            <span>${icon}</span>
+            <strong>${label}</strong>
+          </button>
+        `).join("")}
       </div>
-      <div style="height: 18px"></div>
-      <button class="btn" onclick="continueCorrectiveScreening()">Continue</button>
-      <button class="btn secondary" onclick="setRisk(true)">Preview safety warning</button>
+
+      <button class="corrective-continue" onclick="continueCorrectiveScreening()">Continue <span>→</span></button>
+      <button class="corrective-back" onclick="setScreen('goals')">Go Back</button>
+    </section>
+  `);
+}
+
+function discomfortScreening() {
+  const answers = state.correctiveScreening;
+  const areaOptions = [
+    ["upper_back", "Upper Back", "✣"],
+    ["lower_back", "Lower Back", "♙"],
+    ["hips", "Hips", "┃"],
+    ["shoulders", "Shoulders", "▌"]
+  ];
+  const timingOptions = [
+    ["after_waking", "After waking up"],
+    ["after_sitting", "After sitting for long periods"],
+    ["during_movement", "During movement"],
+    ["constant", "Constant"]
+  ];
+  shell(`
+    <section class="view discomfort-screening-page">
+      <div class="discomfort-topbar">
+        <button class="goal-back" onclick="setScreen('goals')" aria-label="Back">←</button>
+        <div class="discomfort-brand">FlowMove</div>
+        <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
+      </div>
+
+      <div class="discomfort-intro">
+        <h2>Tell us about your discomfort.</h2>
+        <p>Your responses help our AI tailor a movement path focused on long-term alignment and relief.</p>
+      </div>
+
+      <div class="discomfort-section">
+        <p class="discomfort-label">Where do you feel it most?</p>
+        <div class="discomfort-area-grid">
+          ${areaOptions.map(([value, label, icon]) => `
+            <button class="discomfort-area-card ${answers.discomfortArea === value ? "selected" : ""}" onclick="updateDiscomfortScreening('discomfortArea', '${value}')">
+              <span>${icon}</span>
+              <strong>${label}</strong>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="discomfort-section">
+        <p class="discomfort-label">When is it most noticeable?</p>
+        <div class="discomfort-radio-list">
+          ${timingOptions.map(([value, label]) => `
+            <button class="discomfort-radio-row ${answers.noticeableWhen === value ? "selected" : ""}" onclick="updateDiscomfortScreening('noticeableWhen', '${value}')">
+              <i aria-hidden="true"></i>
+              <span>${label}</span>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="discomfort-section">
+        <div class="discomfort-slider-head">
+          <p class="discomfort-label">Severity (1-10)</p>
+          <strong>${answers.severity}</strong>
+        </div>
+        <input
+          class="discomfort-slider"
+          type="range"
+          min="1"
+          max="10"
+          value="${answers.severity}"
+          oninput="updateDiscomfortScreening('severity', this.value)"
+          aria-label="Severity from 1 to 10"
+        />
+        <div class="discomfort-slider-labels">
+          <span>Mild</span>
+          <span>Moderate</span>
+          <span>Severe</span>
+        </div>
+      </div>
+
+      <div class="discomfort-section">
+        <p class="discomfort-label">Does it radiate or feel sharp?</p>
+        <div class="discomfort-segmented">
+          ${[
+            ["yes", "Yes"],
+            ["no", "No"]
+          ].map(([value, label]) => `
+            <button class="${answers.radiatesOrSharp === value ? "selected" : ""}" onclick="updateDiscomfortScreening('radiatesOrSharp', '${value}')">${label}</button>
+          `).join("")}
+        </div>
+      </div>
+
+      <button class="discomfort-save-button" onclick="continueCorrectiveScreening()">Save and Continue <span>→</span></button>
     </section>
   `);
 }
@@ -600,7 +911,7 @@ function chips(label, options, selected = []) {
 function preferences() {
   shell(`
     <section class="view">
-      ${topbar(state.path === "postpartum" ? "postpartum-screening" : "corrective-screening")}
+      ${topbar(screeningReturnScreen())}
       <div class="screen-intro">
         <p class="eyebrow">Training rhythm</p>
         <h2>Make it fit your week.</h2>
@@ -843,24 +1154,14 @@ function main() {
 function today() {
   const isPostpartum = state.path === "postpartum";
   const recommendation = recommendationForToday();
-  const insight = isPostpartum
-    ? "Your pelvis stayed steadier during bridges yesterday. Great progress on deep core engagement."
-    : "Your shoulder mobility stayed smoother yesterday. Great progress on posture control.";
+  const insight = todayInsight();
   const readinessOptions = [
     ["Good", "☻"],
     ["Tired", "☾"],
     ["Sore", "⌘"],
     ["Pain or discomfort", "△"]
   ];
-  const weeklyBars = [
-    ["M", 34, false],
-    ["T", 52, false],
-    ["W", 78, true],
-    ["T", 26, false],
-    ["F", 88, true],
-    ["S", 0, false],
-    ["S", 0, false]
-  ];
+  const weeklyBars = recentWeeklyBars();
   return `
     <section class="view today-dashboard">
       <div class="dashboard-topbar">
@@ -1022,6 +1323,7 @@ function sessionComplete() {
 function report() {
   const session = completedSessionOrFallback();
   const report = generateSessionReport(session);
+  const replayImage = `./assets/workout-${Math.min(Math.max(session.completedExerciseIds.length - 1, 0), 2)}.jpg`;
   state.tab = "progress";
   shell(`
     <section class="view session-report">
@@ -1031,8 +1333,8 @@ function report() {
         <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
       </div>
 
-      <div class="session-complete-pill"><span>⌁＿♧RK</span> Session Complete</div>
-      <h1>Beautifully balanced<br />today, Sarah.</h1>
+      <div class="session-complete-pill"><span>⌁</span> Session Complete</div>
+      <h1>${report.headline.replace(", Sarah.", ",<br />Sarah.")}</h1>
 
       <div class="quality-ring" aria-label="Movement quality ${report.score}%">
         <span>${report.score}%</span>
@@ -1043,10 +1345,10 @@ function report() {
         <div class="report-icon">↗</div>
         <div>
           <h3>What improved</h3>
-          <p>Your <strong>pelvis stayed steadier</strong> during bridges today, and your breathing was more consistent during core work. This stability reflects great progress in your deep stabilizer activation.</p>
+          <p>${report.whatImproved}</p>
           <div class="report-mini-grid">
-            <span>Core Stability:<b>+12%</b></span>
-            <span>Breath Rhythm:<b>Optimal</b></span>
+            <span>Completion:<b>${report.completion}%</b></span>
+            <span>Primary Focus:<b>${report.primaryFocus}</b></span>
           </div>
         </div>
       </div>
@@ -1055,19 +1357,19 @@ function report() {
         <div class="report-icon">⌗</div>
         <div>
           <h3>What needs attention</h3>
-          <p>Your right hip still showed less stability during unilateral movements. We noticed a slight tilt when weight-shifting.</p>
+          <p>${report.needsAttention}</p>
         </div>
       </div>
 
       <div class="replay-card">
-        <img src="./assets/workout-1.jpg" alt="Movement replay" />
-        <button>▣ View Replay</button>
+        <img src="${replayImage}" alt="Movement replay" />
+        <button>${report.completed} completed · ${report.skipped} skipped</button>
       </div>
 
       <div class="next-adjustment-card">
         <p>▣ Next Session Adjustment</p>
-        <h3>Focus on Single-Side Activation</h3>
-        <span>To balance that right hip stability, your next session will automatically include gentle single-side activation drills tailored to your current alignment.</span>
+        <h3>${session.moduleTitle}</h3>
+        <span>${report.nextAdjustment}</span>
         <button onclick="goMain('progress')">Schedule Next</button>
       </div>
 
@@ -1079,6 +1381,36 @@ function report() {
 }
 
 function progress() {
+  const sessions = state.sessionHistory.filter((session) => session.status === "complete");
+  const metric = progressMetrics();
+  const latest = sessions[0];
+  const averageScore = sessions.length
+    ? Math.round(sessions.reduce((total, session) => total + scoreSession(session), 0) / sessions.length)
+    : 0;
+  const latestReport = latest ? generateSessionReport(latest) : null;
+  const sessionHistoryRows = sessions.length
+    ? sessions.slice(0, 5).map((session) => {
+        const score = scoreSession(session);
+        return `
+          <div class="history-row">
+            <img src="./assets/workout-${Math.min(Math.max(session.completedExerciseIds.length - 1, 0), 2)}.jpg" alt="${session.moduleTitle}" />
+            <div>
+              <h3>${session.moduleTitle}</h3>
+              <p>${formatSessionDate(session.completedAt || session.startedAt)} · ${sessionElapsedMinutes(session)} min · ${session.intensity}</p>
+            </div>
+            <div class="history-score"><strong>${score}%</strong><span>Quality</span></div>
+            <b>›</b>
+          </div>
+        `;
+      }).join("")
+    : `
+      <div class="card">
+        <h3>No sessions yet</h3>
+        <p class="copy">Complete your first FlowMove session to start building a body journal from real movement data.</p>
+        <button class="btn" onclick="goMain('today')">Start Session</button>
+      </div>
+    `;
+
   return `
     <section class="view progress-journal">
       <div class="journal-topbar">
@@ -1090,7 +1422,9 @@ function progress() {
       <div class="journal-intro">
         <span class="journal-pill">Body Journal</span>
         <h2>Your Evolution</h2>
-        <p>A graceful journey through mobility and strength. You've completed 12 sessions this month with focus on spinal alignment.</p>
+        <p>${sessions.length
+          ? `You've completed ${sessions.length} ${sessions.length === 1 ? "session" : "sessions"}. Your current average movement quality is ${averageScore}%.`
+          : "Your progress journal will begin after your first completed session."}</p>
         <div class="range-toggle" aria-label="Progress range">
           <button>7 Days</button>
           <button class="active">30 Days</button>
@@ -1101,7 +1435,7 @@ function progress() {
         <div class="journal-card-head">
           <div>
             <h3>Core & Mobility</h3>
-            <p>Stability index improvement +14%</p>
+            <p>${sessions.length ? `${latestReport.primaryFocus} is your strongest recent signal` : "Waiting for first session data"}</p>
           </div>
           <span>⌁</span>
         </div>
@@ -1124,20 +1458,20 @@ function progress() {
 
       <div class="journal-metric-card">
         <div class="metric-title"><span>⚖</span><p>Stability</p></div>
-        <div class="metric-value">88 <small>/100</small></div>
-        <div class="journal-progress-line"><i style="width:88%"></i></div>
+        <div class="metric-value">${metric.stability} <small>/100</small></div>
+        <div class="journal-progress-line"><i style="width:${metric.stability}%"></i></div>
       </div>
 
       <div class="journal-metric-card accent">
         <div class="metric-title"><span>▭</span><p>Alignment</p></div>
-        <div class="metric-value">92 <small>% Accuracy</small></div>
-        <div class="journal-progress-line"><i style="width:92%"></i></div>
+        <div class="metric-value">${metric.alignment} <small>% Accuracy</small></div>
+        <div class="journal-progress-line"><i style="width:${metric.alignment}%"></i></div>
       </div>
 
       <div class="growth-card">
         <h3>Recent Growth</h3>
-        <div class="growth-item"><span>◎</span><div><strong>Lumbar Support</strong><p>Significant reduction in arching during leg lifts.</p></div></div>
-        <div class="growth-item"><span>◎</span><div><strong>Pelvic Floor Engagement</strong><p>Holding contraction 4s longer on average.</p></div></div>
+        <div class="growth-item"><span>◎</span><div><strong>${latest ? latest.moduleTitle : "First Session"}</strong><p>${latestReport ? latestReport.whatImproved : "Complete a session to unlock specific movement notes."}</p></div></div>
+        <div class="growth-item"><span>◎</span><div><strong>Next Focus</strong><p>${latestReport ? latestReport.nextAdjustment : "FlowMove will adapt your next plan after the first session."}</p></div></div>
       </div>
 
       <div class="milestone-card">
@@ -1145,49 +1479,177 @@ function progress() {
         <div class="milestone-content">
           <div class="milestone-ring"><span>75%</span></div>
           <div>
-            <strong>Teaser Mastery</strong>
-            <p>3 more advanced core sessions to unlock.</p>
+            <strong>${state.path === "postpartum" ? "Foundation Consistency" : "Alignment Consistency"}</strong>
+            <p>${Math.max(0, 3 - sessions.length)} more completed sessions to unlock a stronger trend view.</p>
           </div>
         </div>
       </div>
 
       <div class="history-head">
         <h2>Session History</h2>
-        <button>View all journals</button>
+        <button>${sessions.length} total</button>
       </div>
 
       <div class="session-history-list">
-        <div class="history-row">
-          <img src="./assets/session.jpg" alt="Spine articulation series" />
-          <div>
-            <h3>Spine Articulation Series</h3>
-            <p>Oct 24 · 45 min · Moderate Intensity</p>
-          </div>
-          <div class="history-score"><strong>94%</strong><span>Alignment</span></div>
-          <b>›</b>
-        </div>
-        <div class="history-row">
-          <img src="./assets/workout-2.jpg" alt="Lateral stability basics" />
-          <div>
-            <h3>Lateral Stability Basics</h3>
-            <p>Oct 22 · 30 min · Gentle Flow</p>
-          </div>
-          <div class="history-score"><strong>87%</strong><span>Stability</span></div>
-          <b>›</b>
-        </div>
+        ${sessionHistoryRows}
       </div>
     </section>
   `;
 }
 
 function programs() {
-  const modules = content.programModules.filter((module) => module.path === state.path);
+  const isPostpartum = state.path === "postpartum";
+  const pathModules = isPostpartum
+    ? [
+        {
+          id: "foundation_reset",
+          title: "Foundation Reset",
+          summary: "Breathing mechanics and pelvic floor re-education for the initial weeks.",
+          duration: "14 days",
+          level: "Gentle",
+          icon: "⌁",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "deep_core_rebuild",
+          title: "Deep Core Rebuild",
+          summary: "Focus on the transverse abdominis and pressure-aware core control.",
+          duration: "21 days",
+          level: "Steady",
+          icon: "◎",
+          tone: "rose",
+          locked: false
+        },
+        {
+          id: "pelvis_hip_stability",
+          title: "Pelvis & Hip Stability",
+          summary: "Correcting pelvis drift and building a balanced structural base.",
+          duration: "14 days",
+          level: "Focused",
+          icon: "⚖",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "posture_mobility_locked",
+          title: "Posture & Mobility",
+          summary: "Counteracting nursing posture and releasing upper body tension.",
+          icon: "✣",
+          tone: "neutral",
+          locked: true
+        },
+        {
+          id: "return_exercise_locked",
+          title: "Strength & Return to Exercise",
+          summary: "Dynamic progressions to transition back to your favorite sports.",
+          icon: "⌘",
+          tone: "neutral",
+          locked: true
+        }
+      ]
+    : [
+        {
+          id: "posture_reset",
+          title: "Posture Reset",
+          summary: "Shoulder, rib, and upper-back mobility for long sitting days.",
+          duration: "14 days",
+          level: "Gentle",
+          icon: "✣",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "hip_glute_stability",
+          title: "Hip & Glute Stability",
+          summary: "Glute activation, hip control, and balanced lower-body alignment.",
+          duration: "21 days",
+          level: "Steady",
+          icon: "⚖",
+          tone: "rose",
+          locked: false
+        },
+        {
+          id: "back_friendly_strength",
+          title: "Back-Friendly Strength",
+          summary: "Low-impact strength with spine-friendly control and measured tempo.",
+          duration: "14 days",
+          level: "Focused",
+          icon: "⌁",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "balance_alignment",
+          title: "Balance & Alignment",
+          summary: "Left-right control and everyday movement confidence.",
+          duration: "14 days",
+          level: "Control",
+          icon: "◎",
+          tone: "green",
+          locked: false
+        },
+        {
+          id: "advanced_control_locked",
+          title: "Strength & Body Control",
+          summary: "Progressive Pilates sequences for smoother coordinated strength.",
+          icon: "⌘",
+          tone: "neutral",
+          locked: true
+        }
+      ];
   return `
-    <section class="view">
-      <div class="topbar"><div class="brand">Programs</div><span class="mini">${state.path === "postpartum" ? "Postpartum" : "Corrective"}</span></div>
-      <h2>Modules matched to your path.</h2>
-      <div class="stack">
-        ${modules.map((module, index) => `<div class="card"><h3>${module.title}</h3><p class="copy">${module.summary}</p><p class="mini">${index < 2 ? "Recommended now" : "Available as you progress"}</p></div>`).join("")}
+    <section class="view programs-path-page">
+      <div class="programs-topbar">
+        <button class="menu-button" aria-label="Menu"><span></span><span></span><span></span></button>
+        <div class="programs-brand">FlowMove</div>
+        <button class="avatar-photo" onclick="setScreen('goals')" aria-label="Profile"></button>
+      </div>
+
+      <div class="programs-intro">
+        <p class="programs-eyebrow">Personalized Path</p>
+        <h2>${isPostpartum ? "Postpartum Recovery" : "Corrective Pilates"}</h2>
+        <p>${isPostpartum
+          ? "A holistic journey to restore your strength, alignment, and confidence from the inside out."
+          : "A focused path to improve posture, mobility, balance, and everyday movement control."}</p>
+      </div>
+
+      <div class="programs-video-card">
+        <img src="./assets/session.jpg" alt="${isPostpartum ? "Postpartum Recovery" : "Corrective Pilates"} intro" />
+        <button>▷ Watch Intro</button>
+      </div>
+
+      <div class="program-module-list">
+        ${pathModules.map((module, index) => `
+          <article class="program-module-card ${module.locked ? "locked" : ""}">
+            <div class="program-card-top">
+              <span class="program-icon ${module.tone}">${module.icon}</span>
+              <span class="program-count">${module.locked ? "♙" : String(index + 1).padStart(2, "0") + " / 05"}</span>
+            </div>
+            <h3>${module.title}</h3>
+            <p>${module.summary}</p>
+            ${module.locked ? "" : `
+              <div class="program-tags">
+                <span>${module.duration}</span>
+                <span>${module.level}</span>
+              </div>
+            `}
+            <button
+              class="program-arrow"
+              onclick="${module.locked ? "" : `setScreen('session-preview')`}"
+              aria-label="${module.locked ? "Locked module" : `Open ${module.title}`}"
+              ${module.locked ? "disabled" : ""}
+            >→</button>
+          </article>
+        `).join("")}
+      </div>
+
+      <div class="alignment-scan-card">
+        <div>
+          <h3>Alignment Scan</h3>
+          <p>Check your pelvic tilt in real-time with AI.</p>
+        </div>
+        <button onclick="setScreen('camera')">Start Scan</button>
       </div>
     </section>
   `;
@@ -1217,7 +1679,7 @@ function safety() {
       <div class="safety-rule" aria-hidden="true"></div>
       <p class="safety-note">This is not a diagnosis.</p>
       <div class="safety-image" role="img" aria-label="Calm Pilates studio"></div>
-      <button class="safety-button" onclick="setScreen(state.path === 'postpartum' ? 'postpartum-screening' : 'corrective-screening')">I Understand <span>→</span></button>
+      <button class="safety-button" onclick="setScreen(screeningReturnScreen())">I Understand <span>→</span></button>
       <p class="terms-note">By continuing, you agree to our terms of service.</p>
     </section>
   `);
@@ -1229,6 +1691,7 @@ function render() {
     goals: goalSelection,
     "postpartum-screening": postpartumScreening,
     "corrective-screening": correctiveScreening,
+    "discomfort-screening": discomfortScreening,
     preferences,
     camera: cameraSetup,
     "assessment-intro": assessmentIntro,
@@ -1243,10 +1706,12 @@ function render() {
     safety
   };
   routes[state.screen]();
+  persistState();
 }
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 
+hydrateState();
 render();

@@ -6,7 +6,23 @@ window.FlowMoveRecommendation = {
     if (state.path === "postpartum") signals.add("postpartum");
     if (selectedGoals.includes("posture")) signals.add("posture_goal");
     if (selectedGoals.includes("strength")) signals.add("strength_goal");
+    if (selectedGoals.includes("discomfort")) signals.add("back_discomfort");
     if (selectedGoals.includes("corrective")) signals.add("alignment_goal");
+
+    if (state.correctiveScreening?.focusArea === "posture") signals.add("posture_goal");
+    if (state.correctiveScreening?.focusArea === "mobility") signals.add("limited_shoulder_mobility");
+    if (state.correctiveScreening?.focusArea === "stability") signals.add("hip_instability");
+    if (state.correctiveScreening?.focusArea === "strength") signals.add("strength_goal");
+
+    if (state.correctiveScreening?.discomfortArea === "lower_back") signals.add("back_discomfort");
+    if (state.correctiveScreening?.discomfortArea === "upper_back") {
+      signals.add("back_discomfort");
+      signals.add("limited_shoulder_mobility");
+    }
+    if (state.correctiveScreening?.discomfortArea === "hips") signals.add("hip_instability");
+    if (state.correctiveScreening?.discomfortArea === "shoulders") signals.add("limited_shoulder_mobility");
+    if (state.correctiveScreening?.noticeableWhen === "after_sitting") signals.add("long_sitting");
+    if (Number(state.correctiveScreening?.severity || 0) >= 4) signals.add("moderate_discomfort");
 
     if (state.readiness === "Tired") signals.add("low_energy");
     if (state.readiness === "Sore") signals.add("recovery_needed");
